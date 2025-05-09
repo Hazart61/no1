@@ -135,13 +135,16 @@ def help_command(message):
         "/register - Зарегистрироваться в системе\n"
         "/search - Найти места\n"
         "/add_favorite - Добавить место в избранное\n"
+        "/remove_favorite - Удалить место из избранного\n"
         "/add_review - Добавить отзыв о месте\n"
+        "/remove_review - Удалить отзыв\n"
         "/find_friend - Найти друга по имени\n"
         "/profile - Показать свой профиль\n"
-        "/view_friend_profile - Посмотреть профиль друга\n"
         "/recommend - Получить рекомендации по местам для отдыха\n"
         "/delete_profile - Удалить свой профиль\n"
         "/change_username - Изменить имя пользователя\n"
+        "/view_friends - Просмотреть список друзей\n"
+        "/remove_friend - Удалить друга\n"
     )
     bot.send_message(message.chat.id, help_text)
 
@@ -207,23 +210,37 @@ def process_add_favorite(message):
     update_user(user_id, users[user_id])
     bot.send_message(user_id, f"Адрес '{address}' добавлен в избранные места!")
 
-@bot.message_handler(commands=['remove_friend'])
-def remove_friend(message):
+@bot.message_handler(commands=['remove_favorite'])
+def remove_favorite_place(message):
     user_id = message.from_user.id
     if user_id not in users:
         bot.send_message(user_id, "Сначала зарегистрируйтесь с помощью команды /register.")
         return
-    friends_list = ', '.join(users[user_id]['friends']) or 'Нет друзей.'
-    bot.send_message(user_id, f"Ваши друзья: {friends_list}\nВведите имя друга для удаления:")
-    bot.register_next_step_handler(message, process_remove_friend)
 
-def process_remove_friend(message):
-    user_name_to_remove = message.text.strip()
-    user_found = next((user for user in users.values() if user['username'] == user_name_to_remove), None)
-    if user_found and user_found['user_id'] in users[message.from_user.id]['friends']:
-        users[message.from_user.id]['friends'].remove(user_found['user_id'])
-        update_user(message.from_user.id, users[message.from_user.id])
-        bot.send_message(message.chat.id, f"{user_name_to_remove} был удален из ваших друзей.")
+    favorites = users[user_id]['favorites']
+    if not favorites:
+        bot.send_message(user_id, "У вас нет избранных мест для удаления.")
+        return
+
+    favorites_list = "\n".join([f"{i + 1}. {fav}" for i, fav in enumerate(favorites)])
+    bot.send_message(user_id, f"Ваши избранные места:\n{favorites_list}\nВведите номер места для удаления:")
+    bot.register_next_step_handler(message, process_remove_favorite)
+
+
+def process_remove_favorite(message):
+    user_id = message.from_user.id
+    try:
+        index = int(message.text.strip()) - 1
+        if 0 <= index < len(users[user_id]['favorites']):
+            removed_place = users[user_id]['favorites'].pop(index)
+            update_user(user_id, users[user_id])
+            bot.send_message(user_id, f"Место '{removed_place}' удалено из избранного!")
+        else:
+            bot.send_message(user_id, "Пожалуйста, попробуйте снова.")
+            bot.register_next_step_handler(message, process_remove_favorite)
+    except ValueError:
+        bot.send_message(user_id, "Пожалуйста, введите номер места.")
+        bot.register_next_step_handler(message, process_remove_favorite)
 
 @bot.message_handler(commands=['recommend'])
 def recommend_command(message):
@@ -274,6 +291,39 @@ def process_review_description(message, address):
     update_user(user_id, users[user_id])
     bot.send_message(user_id, f"Отзыв на адрес '{address}' добавлен!")
 
+@bot.message_handler(commands=['remove_review'])
+def remove_review_command(message):
+    user_id = message.from_user.id
+    if user_id not in users:
+        bot.send_message(user_id, "Сначала зарегистрируйтесь с помощью команды /register.")
+        return
+
+    reviews = users[user_id]['reviews']
+    if not reviews:
+        bot.send_message(user_id, "У вас нет отзывов для удаления.")
+        return
+
+    reviews_list = "\n".join([f"{i + 1}. {addr}" for i, addr in enumerate(reviews.keys())])
+    bot.send_message(user_id, f"Ваши отзывы:\n{reviews_list}\nВведите номер отзыва для удаления:")
+    bot.register_next_step_handler(message, process_remove_review)
+
+def process_remove_review(message):
+    user_id = message.from_user.id
+    try:
+        index = int(message.text.strip()) - 1
+        addresses = list(users[user_id]['reviews'].keys())
+        if 0 <= index < len(addresses):
+            removed_address = addresses[index]
+            removed_review = users[user_id]['reviews'].pop(removed_address)
+            update_user(user_id, users[user_id])
+            bot.send_message(user_id, f"Отзыв на адрес '{removed_address}' удален!")
+        else:
+            bot.send_message(user_id, "Пожалуйста, попробуйте снова.")
+            bot.register_next_step_handler(message, process_remove_review)
+    except ValueError:
+        bot.send_message(user_id, "Пожалуйста, введите номер отзыва.")
+        bot.register_next_step_handler(message, process_remove_review)
+
 @bot.message_handler(commands=['find_friend'])
 def find_friend_by_name(message):
     user_id = message.from_user.id
@@ -295,6 +345,24 @@ def process_find_friend(message):
         bot.send_message(message.chat.id, f"Найденные друзья:\n{friend_list}", reply_markup=markup)
     else:
         bot.send_message(message.chat.id, "Друзья не найдены.")
+
+@bot.message_handler(commands=['remove_friend'])
+def remove_friend(message):
+    user_id = message.from_user.id
+    if user_id not in users:
+        bot.send_message(user_id, "Сначала зарегистрируйтесь с помощью команды /register.")
+        return
+    friends_list = ', '.join(users[user_id]['friends']) or 'Нет друзей.'
+    bot.send_message(user_id, f"Ваши друзья: {friends_list}\nВведите имя друга для удаления:")
+    bot.register_next_step_handler(message, process_remove_friend)
+
+def process_remove_friend(message):
+    user_name_to_remove = message.text.strip()
+    user_found = next((user for user in users.values() if user['username'] == user_name_to_remove), None)
+    if user_found and user_found['user_id'] in users[message.from_user.id]['friends']:
+        users[message.from_user.id]['friends'].remove(user_found['user_id'])
+        update_user(message.from_user.id, users[message.from_user.id])
+        bot.send_message(message.chat.id, f"{user_name_to_remove} был удален из ваших друзей.")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('send_request_'))
 def handle_send_request(call):
