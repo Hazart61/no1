@@ -7,7 +7,7 @@ from database import (add_user, get_user, get_user_by_username,
 
 # ключи
 TOKEN = '7148550227:AAFE_eBe-UkNE42UebmujyvidyAipQe8Zwg'
-YANDEX_API_KEY = 'ee7ac1b0-0384-4666-8561-c20f38523b9a'
+YANDEX_API_KEY = 'be1feead-ce5e-4c74-b620-7b32364dc431'
 bot = telebot.TeleBot(TOKEN)
 
 users = {}
