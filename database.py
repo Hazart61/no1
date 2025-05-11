@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import datetime
 
+
 def get_connection():
     return sqlite3.connect('users.db')
 
