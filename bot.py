@@ -790,6 +790,9 @@ def recommend_send_results(user_id, places):
             f"🌐 Координаты: {place['lat']}, {place['lon']}\n\n"
         )
 
+    # Создаем кнопки для интерактивного меню
+    markup = types.InlineKeyboardMarkup()
+
     bot.send_message(
         user_id,
         text=message,
