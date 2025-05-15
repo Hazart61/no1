@@ -6,9 +6,9 @@ from database import (add_user, get_user, get_user_by_username,
                       get_all_users, delete_user, add_friend, update_user)
 
 # ключи
-TOKEN = '7148550227:AAFE_eBe-UkNE42UebmujyvidyAipQe8Zwg'
-YANDEX_API_KEY = 'be1feead-ce5e-4c74-b620-7b32364dc431'
-bot = telebot.TeleBot(TOKEN)
+Token_tg = '7148550227:AAFE_eBe-UkNE42UebmujyvidyAipQe8Zwg'
+Api = 'be1feead-ce5e-4c74-b620-7b32364dc431'
+bot = telebot.TeleBot(Token_tg)
 
 users = {}
 
@@ -16,7 +16,7 @@ users = {}
 def register_user(user_id, username):
     existing_user = get_user_by_username(username)
     if existing_user:
-        return False  # Имя занято
+        return False
 
     try:
         add_user(user_id, username)
@@ -65,75 +65,6 @@ def get_user_profile(user_id):
                 f"👥 Друзья: {friends_list}\n"
                 f"📅 Дата регистрации: {user_data['registration_date']}")
     return "Пользователь не найден."
-
-
-def search_places(city, query):
-    url = 'https://search-maps.yandex.ru/v1/'
-    params = {
-        'apikey': YANDEX_API_KEY,
-        'text': f'{query}, {city}',
-        'lang': 'ru_RU',
-        'results': 10,
-    }
-    try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-        places = []
-        for feature in data.get('features', []):
-            place_name = feature['properties']['name']
-            address = feature['properties']['description']
-            coordinates = feature['geometry']['coordinates']
-            places.append({
-                'name': place_name,
-                'address': address,
-                'coordinates': coordinates,
-            })
-        return places
-    except requests.exceptions.HTTPError as http_err:
-        print(f"HTTP error occurred: {http_err}")
-        return []
-    except Exception as err:
-        print(f"Other error occurred: {err}")
-        return []
-
-
-def send_places_list(chat_id, places):
-    markup = types.InlineKeyboardMarkup()
-    for i in range(min(5, len(places))):
-        place = places[i]
-        markup.add(types.InlineKeyboardButton(
-            f"{place['name']} - {place['address']}",
-            url=f"https://yandex.ru/maps/?text={place['coordinates'][1]},{place['coordinates'][0]}"
-        ))
-    if len(places) > 5:
-        markup.add(types.InlineKeyboardButton("Далее", callback_data='next_page'))
-    bot.send_message(chat_id, "Результаты поиска:", reply_markup=markup)
-
-
-def recommend_places(user_id):
-    questions = [
-        "Какой тип места вы предпочитаете? (например, кафе, парк, музей)",
-        "Какой бюджет вы планируете? (например, бюджетный, средний, высокий)",
-        "Какое время года вы предпочитаете? (например, лето, зима, весна, осень)",
-        "Какое время суток вы предпочитаете? (например, утро, день, вечер, ночь)",
-        "Какие особенности вы ищете? (например, семейное место, романтическое место, место для активного отдыха)"
-    ]
-    answers = []
-
-    def ask_question(question_index):
-        if question_index < len(questions):
-            bot.send_message(user_id, questions[question_index])
-            bot.register_next_step_handler_by_chat_id(user_id, lambda msg: process_answer(msg, question_index))
-        else:
-            places = search_places(" ", " ".join(answers))
-            send_places_list(user_id, places)
-
-    def process_answer(message, question_index):
-        answers.append(message.text.strip())
-        ask_question(question_index + 1)
-
-    ask_question(0)
 
 
 @bot.message_handler(commands=['start'])
@@ -190,33 +121,6 @@ def profile_command(message):
     profile_info = get_user_profile(user_id)
     bot.send_message(message.chat.id, profile_info)
 
-
-@bot.message_handler(commands=['search'])
-def handle_search(message):
-    bot.send_message(message.chat.id, "Введите название города:")
-    bot.register_next_step_handler(message, process_city)
-
-
-def process_city(message):
-    city = message.text.strip()
-    bot.send_message(message.chat.id, "Введите слово для поиска:")
-    bot.register_next_step_handler(message, lambda msg: process_search(msg, city))
-
-
-def process_search(message, city):
-    query = message.text.strip()
-    places = search_places(city, query)
-    if not places:
-        bot.send_message(message.chat.id, "Ничего не найдено.")
-        return
-    send_places_list(message.chat.id, places)
-
-
-@bot.callback_query_handler(func=lambda call: call.data == 'next_page')
-def next_page(call):
-    bot.send_message(call.message.chat.id, "Здесь будут следующие результаты.")
-
-
 @bot.message_handler(commands=['add_favorite'])
 def add_favorite_place(message):
     user_id = message.from_user.id
@@ -266,16 +170,6 @@ def process_remove_favorite(message):
     except ValueError:
         bot.send_message(user_id, "Пожалуйста, введите номер места.")
         bot.register_next_step_handler(message, process_remove_favorite)
-
-
-@bot.message_handler(commands=['recommend'])
-def recommend_command(message):
-    user_id = message.from_user.id
-    if user_id not in users:
-        bot.send_message(user_id, "Сначала зарегистрируйтесь с помощью команды /register.")
-        return
-    recommend_places(user_id)
-
 
 @bot.message_handler(commands=['delete_profile'])
 def delete_profile_command(message):
@@ -432,16 +326,13 @@ def accept_friend_request(call):
         bot.answer_callback_query(call.id, "Запрос не найден.")
         return
 
-    # Добавляем в друзья
     if requester_id not in users[user_id]['friends']:
         users[user_id]['friends'].append(requester_id)
     if user_id not in users[requester_id]['friends']:
         users[requester_id]['friends'].append(user_id)
 
-    # Удаляем запрос
     users[user_id]['friend_requests'].remove(requester_id)
 
-    # Обновляем данные в базе
     update_user(user_id, users[user_id])
     update_user(requester_id, users[requester_id])
 
@@ -564,7 +455,6 @@ def process_remove_friend(message):
             friend_id = friends_ids[index]
             friend = users.get(friend_id)
 
-            # Удаляем из друзей у обоих пользователей
             users[user_id]['friends'].remove(friend_id)
             if user_id in users[friend_id]['friends']:
                 users[friend_id]['friends'].remove(user_id)
@@ -600,7 +490,6 @@ def process_change_username(message):
     user_id = message.from_user.id
     new_username = message.text.strip()
 
-    # Проверяем, не занято ли имя другим пользователем
     existing_user = get_user_by_username(new_username)
     if existing_user and existing_user['user_id'] != user_id:
         bot.send_message(user_id, "Это имя уже занято. Пожалуйста, выберите другое имя.")
