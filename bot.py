@@ -2,6 +2,7 @@ import telebot
 from telebot import types
 from datetime import datetime
 import requests
+import random
 from database import (add_user, get_user, get_user_by_username,
                       get_all_users, delete_user, add_friend, update_user)
 
@@ -11,6 +12,50 @@ Api = 'be1feead-ce5e-4c74-b620-7b32364dc431'
 bot = telebot.TeleBot(Token_tg)
 
 users = {}
+
+# Вопросы и варианты ответов для предпочтений (для команды /recommend)
+Questions = {
+    "price": {
+        "question": "Какой уровень цен вас интересует?",
+        "options": ["💰 Бюджетный", "💵 Средний", "💎 Премиум"]
+    },
+    "atmosphere": {
+        "question": "Какая атмосфера предпочтительна?",
+        "options": ["😌 Спокойная", "🎉 Веселая", "💼 Деловая"]
+    },
+    "crowd": {
+        "question": "Какое количество людей предпочитаете?",
+        "options": ["👥 Многолюдно", "👫 Умеренно", "🚶‍♂️ Мало людей"]
+    },
+    "music": {
+        "question": "Какая музыка предпочтительна?",
+        "options": ["🎵 Любая", "🎶 Живая", "🔇 Без музыки"]
+    },
+    "food": {
+        "question": "Какое питание предпочитаете?",
+        "options": ["🍔 Фастфуд", "🍽️ Ресторанное", "🥗 Здоровое"]
+    },
+    "alcohol": {
+        "question": "Отношение к алкоголю?",
+        "options": ["🍻 Есть алкоголь", "🚫 Только безалкогольное", "🤷 Не важно"]
+    },
+    "outdoor": {
+        "question": "Предпочтение по расположению?",
+        "options": ["🌳 На открытом воздухе", "🏢 В помещении", "🤷 Не важно"]
+    },
+    "accessibility": {
+        "question": "Важна ли доступность для маломобильных?",
+        "options": ["♿ Да, важно", "🚶‍♂️ Нет, не важно"]
+    },
+    "parking": {
+        "question": "Нужна ли парковка?",
+        "options": ["🅿️ Да, нужна", "🚶‍♂️ Нет, не нужна"]
+    },
+    "wifi": {
+        "question": "Нужен ли Wi-Fi?",
+        "options": ["📶 Да, нужен", "🚫 Нет, не нужен"]
+    }
+}
 
 
 def register_user(user_id, username):
@@ -78,19 +123,19 @@ def help_command(message):
         "Доступные команды:\n"
         "/start - Начать взаимодействие с ботом\n"
         "/register - Зарегистрироваться в системе\n"
-        "/search - Найти места\n"
         "/add_favorite - Добавить место в избранное\n"
         "/remove_favorite - Удалить место из избранного\n"
         "/add_review - Добавить отзыв о месте\n"
         "/remove_review - Удалить отзыв\n"
         "/find_friend - Найти друга по имени\n"
         "/profile - Показать свой профиль\n"
-        "/recommend - Получить рекомендации по местам для отдыха\n"
         "/delete_profile - Удалить свой профиль\n"
         "/change_username - Изменить имя пользователя\n"
         "/view_friends - Просмотреть список друзей\n"
         "/remove_friend - Удалить друга\n"
         "/view_requests - Просмотреть входящие запросы в друзья\n"
+        "/search - Поиск мест по городу и запросу\n"
+        "/recommend - Персонализированные рекомендации мест"
     )
     bot.send_message(message.chat.id, help_text)
 
@@ -170,6 +215,7 @@ def process_remove_favorite(message):
     except ValueError:
         bot.send_message(user_id, "Пожалуйста, введите номер места.")
         bot.register_next_step_handler(message, process_remove_favorite)
+
 
 @bot.message_handler(commands=['delete_profile'])
 def delete_profile_command(message):
@@ -498,6 +544,258 @@ def process_change_username(message):
         users[user_id]['username'] = new_username
         update_user(user_id, users[user_id])
         bot.send_message(user_id, f"Ваше имя пользователя изменено на {new_username}.")
+
+
+@bot.message_handler(commands=['search'])
+def search_command(message):
+    bot.send_message(message.chat.id, "Привет! В каком городе искать места?")
+    bot.register_next_step_handler(message, process_search_city)
+
+
+def process_search_city(message):
+    city = message.text.strip()
+    if not city:
+        bot.send_message(message.chat.id, "Пожалуйста, введите название города.")
+        bot.register_next_step_handler(message, process_search_city)
+        return
+
+    user_id = message.from_user.id
+    if user_id not in users:
+        users[user_id] = {'search_data': {}}
+    users[user_id]['search_data'] = {'city': city}
+
+    bot.send_message(message.chat.id, f"Ищем в городе {city}. Что ищем? (Например: кафе, парк, музей)")
+    bot.register_next_step_handler(message, process_search_query)
+
+
+def process_search_query(message):
+    query = message.text.strip()
+    if not query:
+        bot.send_message(message.chat.id, "Пожалуйста, введите что искать.")
+        bot.register_next_step_handler(message, process_search_query)
+        return
+
+    user_id = message.from_user.id
+    city = users[user_id]['search_data']['city']
+
+    places = yandex_geocode(city, query)
+    if not places:
+        bot.send_message(message.chat.id, "Ничего не найдено. Попробуйте другой запрос или уточните параметры поиска.")
+        return
+
+    message_text = "🔍 Найденные места:\n\n"
+    for i, place in enumerate(places, 1):
+        message_text += (
+            f"{i}. <b>{place['name']}</b>\n"
+            f"📍 Адрес: {place['address']}\n"
+            f"🌐 Координаты: {place['lat']}, {place['lon']}\n\n"
+        )
+
+    markup = types.InlineKeyboardMarkup()
+    refresh_button = types.InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_search_{city}_{query}")
+    markup.add(refresh_button)
+
+    bot.send_message(message.chat.id, message_text, reply_markup=markup, parse_mode="HTML")
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('refresh_search_'))
+def refresh_search_results(call):
+    data = call.data.split('_')
+    city = data[2]
+    query = '_'.join(data[3:])
+
+    places = yandex_geocode(city, query)
+    if not places:
+        bot.answer_callback_query(call.id, "Ничего не найдено. Попробуйте другой запрос.")
+        return
+
+    message_text = "🔍 Найденные места:\n\n"
+    for i, place in enumerate(places, 1):
+        message_text += (
+            f"{i}. <b>{place['name']}</b>\n"
+            f"📍 Адрес: {place['address']}\n"
+            f"🌐 Координаты: {place['lat']}, {place['lon']}\n\n"
+        )
+
+    markup = types.InlineKeyboardMarkup()
+    refresh_button = types.InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_search_{city}_{query}")
+    markup.add(refresh_button)
+
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=message_text,
+        reply_markup=markup,
+        parse_mode="HTML"
+    )
+    bot.answer_callback_query(call.id, "Результаты обновлены")
+
+
+def yandex_geocode(city, query):
+    try:
+        url = "https://geocode-maps.yandex.ru/1.x/"
+        params = {
+            "apikey": Api,
+            "geocode": f"{city}, {query}",
+            "format": "json",
+            "results": 5,
+        }
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+        places = []
+        features = data.get("response", {}).get("GeoObjectCollection", {}).get("featureMember", [])
+
+        if not features:
+            return None
+
+        for feature in features:
+            geo = feature.get("GeoObject", {})
+            name = geo.get("name", "Название не указано")
+            address = geo.get("description", "Адрес не указан")
+            coords = geo.get("Point", {}).get("pos", "").split()
+
+            if len(coords) >= 2:
+                places.append({
+                    "name": name,
+                    "address": address,
+                    "lat": coords[1],
+                    "lon": coords[0],
+                })
+
+        return places if places else None
+
+    except requests.exceptions.RequestException as e:
+        print(f"Ошибка запроса к API Яндекс: {e}")
+        return None
+    except Exception as e:
+        print(f"Неожиданная ошибка: {e}")
+        return None
+
+
+@bot.message_handler(commands=['recommend'])
+def recommend_command(message):
+    user_id = message.from_user.id
+    if user_id not in users:
+        bot.send_message(user_id, "⚠️ Сначала зарегистрируйтесь с помощью команды /register.")
+        return
+
+    users[user_id]['recommend_data'] = {}
+    bot.send_message(user_id,
+                     "💡  В каком городе будем искать?")
+    bot.register_next_step_handler(message, recommend_ask_city)
+
+
+def recommend_ask_city(message):
+    user_id = message.from_user.id
+    city = message.text.strip()
+    if not city:
+        bot.send_message(user_id, "⚠️ Пожалуйста, введите название города.")
+        bot.register_next_step_handler(message, recommend_ask_city)
+        return
+
+    users[user_id]['recommend_data']['city'] = city
+    bot.send_message(
+        user_id,
+        f"🌆 Какое место вас интересует? (Например: кафе, парк, музей, ресторан)")
+    bot.register_next_step_handler(message, recommend_ask_query)
+
+
+def recommend_ask_query(message):
+    user_id = message.from_user.id
+    query = message.text.strip()
+    if not query:
+        bot.send_message(user_id, "⚠️ Пожалуйста, укажите, что ищем.")
+        bot.register_next_step_handler(message, recommend_ask_query)
+        return
+
+    users[user_id]['recommend_data']['query'] = query
+    users[user_id]['recommend_data']['preferences'] = {}
+
+    selected_questions = random.sample(list(Questions.items()), 3)
+    users[user_id]['recommend_data']['selected_questions'] = [q[0] for q in selected_questions]
+    users[user_id]['recommend_data']['current_question'] = 0
+
+    recommend_ask_next_question(message)
+
+
+def recommend_ask_next_question(message):
+    user_id = message.from_user.id
+    recommend_data = users[user_id]['recommend_data']
+    questions = recommend_data['selected_questions']
+    current = recommend_data['current_question']
+
+    if current >= len(questions):
+        recommend_find_places(message)
+        return
+
+    question_key = questions[current]
+    question_data = Questions[question_key]
+
+    markup = types.InlineKeyboardMarkup()
+    for option in question_data["options"]:
+        markup.add(types.InlineKeyboardButton(option, callback_data=f"pref_{question_key}_{option}"))
+
+    bot.send_message(
+        user_id,
+        text=question_data["question"],
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('pref_'))
+def handle_preference(call):
+    user_id = call.from_user.id
+    _, question_key, option = call.data.split('_', 2)
+
+    users[user_id]['recommend_data']['preferences'][question_key] = option
+    users[user_id]['recommend_data']['current_question'] += 1
+
+    message = types.Message.de_json(call.message.json)
+    message.from_user = call.from_user
+    recommend_ask_next_question(message)
+
+
+def recommend_find_places(message):
+    user_id = message.from_user.id
+    recommend_data = users[user_id]['recommend_data']
+    city = recommend_data.get("city", "")
+    query = recommend_data.get("query", "")
+    preferences = recommend_data.get("preferences", {})
+
+    if not city or not query:
+        bot.send_message(user_id, "⚠️ Недостаточно данных для поиска. Начните заново.")
+        return recommend_command(message)
+
+    search_query = f"{query}"
+
+    places = yandex_geocode(city, search_query)  # Используем существующую функцию yandex_geocode
+
+    if not places:
+        bot.send_message(
+            user_id,
+            "😔 Ничего не найдено по вашим критериям. Попробуйте изменить параметры поиска.")
+        return recommend_command(message)
+
+    recommend_send_results(user_id, places)
+
+
+def recommend_send_results(user_id, places):
+    message = "💡 *Найденные места по вашим предпочтениям:*\n\n"
+    for i, place in enumerate(places, 1):
+        message += (
+            f"{i}. *{place['name']}*\n"
+            f"📍 Адрес: {place['address']}\n"
+            f"🌐 Координаты: {place['lat']}, {place['lon']}\n\n"
+        )
+
+    bot.send_message(
+        user_id,
+        text=message,
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
 
 
 if __name__ == "__main__":
